@@ -153,6 +153,15 @@ function M.setup_cssls_for_injection(opts)
 			root_markers = { "package.json", ".git" },
 			filetypes = extended_filetypes,
 			settings = css_settings,
+			capabilities = {
+				textDocument = {
+					completion = {
+						completionItem = {
+							snippetSupport = true,
+						},
+					},
+				},
+			},
 		}, opts.cssls_config or {})
 
 		-- Enable cssls
