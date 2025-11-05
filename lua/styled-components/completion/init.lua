@@ -72,8 +72,8 @@ end
 --- @return function|nil Cancel function
 function source:get_completions(ctx, callback)
 	local bufnr = ctx.bufnr
-	local row = ctx.line - 1 -- Convert to 0-indexed
-	local col = ctx.col - 1 -- Convert to 0-indexed
+	local row = tonumber(ctx.line) - 1 -- Convert to 0-indexed
+	local col = tonumber(ctx.col) - 1 -- Convert to 0-indexed
 
 	if self.debug then
 		vim.notify(string.format("[styled-components] Completion requested at %d:%d", row, col), vim.log.levels.DEBUG)
