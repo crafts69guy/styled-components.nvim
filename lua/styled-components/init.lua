@@ -91,4 +91,10 @@ function M.print_status()
 	print(vim.inspect(M.status()))
 end
 
+--- Get blink.cmp completion source
+---@return table blink.cmp source
+function M.get_completion_source()
+	return require("styled-components.completion")
+end
+
 return M
