@@ -9,3 +9,6 @@ Thumbs.db
 # Ignore test files
 test/
 *.test.lua
+
+# Ignore Claude Code settings
+.claude/
