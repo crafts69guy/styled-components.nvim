@@ -61,13 +61,16 @@ function M.is_injection_active(bufnr)
 	end
 
 	-- Check if TreeSitter parser exists
-	local has_parser = pcall(vim.treesitter.get_parser, bufnr, filetype)
-	if not has_parser then
+	local has_parser, parser = pcall(vim.treesitter.get_parser, bufnr)
+	if not has_parser or not parser then
 		return false
 	end
 
-	-- Check if we have injection queries loaded
-	local has_query = pcall(vim.treesitter.query.get, filetype, "injections")
+	-- Get the actual parser language
+	local parser_lang = parser:lang()
+
+	-- Check if we have injection queries loaded for this parser language
+	local has_query = pcall(vim.treesitter.query.get, parser_lang, "injections")
 	if not has_query then
 		return false
 	end
