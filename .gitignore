@@ -1,0 +1,11 @@
+# Ignore Neovim runtime files
+*.sw?
+*~
+
+# Ignore OS files
+.DS_Store
+Thumbs.db
+
+# Ignore test files
+test/
+*.test.lua
