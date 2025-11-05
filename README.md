@@ -24,7 +24,7 @@ A high-performance Neovim plugin providing CSS autocompletion for styled-compone
 
 ```lua
 {
-  "yourusername/styled-components.nvim",
+  "crafts69guy/styled-components.nvim",
   ft = { "typescript", "typescriptreact", "javascript", "javascriptreact" },
   config = function()
     require("styled-components").setup({
