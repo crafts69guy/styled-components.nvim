@@ -1,5 +1,9 @@
 local M = {}
 
+-- Cache to prevent duplicate initialization
+local setup_done = false
+local queries_loaded = false
+
 M.config = {
 	enabled = true,
 	debug = false,
@@ -15,7 +19,38 @@ M.config = {
 	cssls_config = {},
 }
 
+--- Load ONLY injection queries (lightweight, for early init)
+--- This can be called in lazy.nvim's init function to ensure
+--- queries are available before buffers are parsed by TreeSitter.
+---@param opts? {debug?: boolean}
+---@return boolean success
+function M.load_queries_early(opts)
+	if queries_loaded then
+		return true
+	end
+
+	opts = opts or {}
+	local debug = opts.debug or M.config.debug
+
+	local injection = require("styled-components.injection")
+	queries_loaded = injection.setup_injection_queries({ debug = debug })
+
+	if queries_loaded and debug then
+		vim.notify("[styled-components] TreeSitter injection queries loaded (early)", vim.log.levels.INFO)
+	end
+
+	return queries_loaded
+end
+
 function M.setup(opts)
+	-- Prevent duplicate setup
+	if setup_done then
+		if M.config.debug then
+			vim.notify("[styled-components] Setup already done, skipping", vim.log.levels.DEBUG)
+		end
+		return
+	end
+
 	M.config = vim.tbl_deep_extend("force", M.config, opts or {})
 
 	if not M.config.enabled then
@@ -23,32 +58,36 @@ function M.setup(opts)
 	end
 
 	if M.config.auto_setup then
-		-- Setup TreeSitter injection
-		local injection = require("styled-components.injection")
-
-		-- Load injection queries
-		local queries_loaded = injection.setup_injection_queries({ debug = M.config.debug })
-
-		if queries_loaded then
-			M.log("TreeSitter injection queries loaded successfully")
-
-			-- Setup cssls for injection
-			vim.defer_fn(function()
-				injection.setup_cssls_for_injection({
-					debug = M.config.debug,
-					cssls_config = M.config.cssls_config,
-				})
-			end, 100) -- Defer to ensure LSP system is loaded
-		else
-			vim.notify(
-				"[styled-components] Failed to load injection queries. CSS completions may not work.",
-				vim.log.levels.WARN
-			)
+		-- Load injection queries if not already loaded
+		if not queries_loaded then
+			local success = M.load_queries_early({ debug = M.config.debug })
+			if not success then
+				vim.notify(
+					"[styled-components] Failed to load injection queries. CSS completions may not work.",
+					vim.log.levels.WARN
+				)
+				return
+			end
 		end
+
+		-- Setup cssls for injection (deferred to ensure LSP system is ready)
+		local injection = require("styled-components.injection")
+		vim.defer_fn(function()
+			injection.setup_cssls_for_injection({
+				debug = M.config.debug,
+				cssls_config = M.config.cssls_config,
+			})
+
+			if M.config.debug then
+				vim.notify("[styled-components] Full setup completed (cssls configured)", vim.log.levels.INFO)
+			end
+		end, 100)
 	end
 
+	setup_done = true
+
 	if M.config.debug then
-		vim.notify("styled-components.nvim initialized with TreeSitter injection", vim.log.levels.INFO)
+		vim.notify("[styled-components] Plugin initialized with TreeSitter injection", vim.log.levels.INFO)
 	end
 end
 

@@ -57,38 +57,51 @@ This provides `vscode-css-language-server` with:
 
 ### Lazy.nvim
 
-#### For Neovim 0.11+ (Native LSP Config)
+#### Recommended: Optimized Lazy Loading
 
 ```lua
 {
   "crafts69guy/styled-components.nvim",
   dependencies = {
     "nvim-treesitter/nvim-treesitter",
-    -- nvim-lspconfig is optional for Neovim 0.11+
+    "neovim/nvim-lspconfig",  -- Optional for Neovim 0.11+
   },
   ft = { "typescript", "typescriptreact", "javascript", "javascriptreact" },
-  opts = {
-    enabled = true,
-    debug = false,
-    auto_setup = true,  -- Auto-setup injection and cssls
-  },
+
+  -- Load injection queries early (lightweight, ~5ms)
+  init = function()
+    require("styled-components").load_queries_early()
+  end,
+
+  -- Full setup on filetype match
+  config = function()
+    require("styled-components").setup({
+      enabled = true,
+      debug = false,
+    })
+  end,
 }
 ```
 
-#### For Neovim 0.10.x
+**Why this config?**
+- `init`: Loads TreeSitter queries early (~5ms, ensures syntax highlighting works)
+- `ft`: Defers full setup until you open a TypeScript/JavaScript file
+- Result: Faster Neovim startup, plugin loads only when needed!
+
+#### Simple: Basic Lazy Loading
 
 ```lua
 {
   "crafts69guy/styled-components.nvim",
   dependencies = {
     "nvim-treesitter/nvim-treesitter",
-    "neovim/nvim-lspconfig",  -- Required for Neovim 0.10.x
+    "neovim/nvim-lspconfig",  -- Optional for Neovim 0.11+
   },
   ft = { "typescript", "typescriptreact", "javascript", "javascriptreact" },
   opts = {
     enabled = true,
     debug = false,
-    auto_setup = true,  -- Auto-setup injection and cssls
+    auto_setup = true,
   },
 }
 ```

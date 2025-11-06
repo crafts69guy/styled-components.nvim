@@ -81,11 +81,32 @@ Utilities to setup and manage injection:
 
 #### 3. `lua/styled-components/init.lua` **Plugin Entry**
 
-Main plugin initialization:
+Main plugin initialization with optimized lazy loading support:
 
-- Loads injection queries automatically
-- Configures cssls to handle TypeScript/JavaScript files
-- Provides `status()` and `print_status()` for debugging
+**Public API:**
+- `load_queries_early(opts)` - Load ONLY injection queries (lightweight, ~5ms). Use this in lazy.nvim's `init` function for optimized lazy loading
+- `setup(opts)` - Full plugin setup (configures cssls, completion source, etc.)
+- `status()` / `print_status()` - Debugging utilities
+- `is_injection_working()` - Check injection status
+
+**Lazy Loading Pattern:**
+```lua
+-- Optimized: Load queries early, defer full setup
+{
+  ft = { "typescript", ... },
+  init = function()
+    require("styled-components").load_queries_early()  -- ~5ms
+  end,
+  config = function()
+    require("styled-components").setup()  -- Full setup
+  end,
+}
+```
+
+**Cache Management:**
+- Prevents duplicate initialization (`setup_done`, `queries_loaded`)
+- `load_queries_early()` can be called multiple times safely
+- `setup()` automatically calls `load_queries_early()` if needed
 
 #### 4. `lua/styled-components/detector.lua` **Utilities** (Optional)
 
