@@ -72,8 +72,8 @@ end
 --- @return function|nil Cancel function
 function source:get_completions(ctx, callback)
 	local bufnr = ctx.bufnr
-	local row = tonumber(ctx.line) - 1 -- Convert to 0-indexed
-	local col = tonumber(ctx.col) - 1 -- Convert to 0-indexed
+	local row = ctx.cursor[1] - 1 -- Convert to 0-indexed (ctx.cursor is 1-indexed)
+	local col = ctx.cursor[2] - 1 -- Convert to 0-indexed
 
 	if self.debug then
 		vim.notify(string.format("[styled-components] Completion requested at %d:%d", row, col), vim.log.levels.DEBUG)
@@ -81,13 +81,9 @@ function source:get_completions(ctx, callback)
 
 	-- Check if cursor is in injected CSS region
 	local injected_lang = injection.get_injected_language_at_pos(bufnr, row, col)
-	if injected_lang ~= "css" then
-		if self.debug then
-			vim.notify(
-				"[styled-components] Not in CSS region (lang: " .. (injected_lang or "none") .. ")",
-				vim.log.levels.DEBUG
-			)
-		end
+
+	-- Accept both "css" and "styled" as valid CSS regions
+	if injected_lang ~= "css" and injected_lang ~= "styled" then
 		callback({ items = {}, is_incomplete_forward = false, is_incomplete_backward = false })
 		return
 	end
@@ -119,15 +115,21 @@ function source:get_completions(ctx, callback)
 		)
 	end
 
-	-- Create virtual CSS document
-	local virtual_content = extractor.create_virtual_css_document(bufnr, css_region)
+	-- Create virtual CSS document with wrapper
+	local virtual_content, line_offset = extractor.create_virtual_css_document(bufnr, css_region)
+
+	-- Adjust position for the wrapper (add line_offset to row)
+	local adjusted_row = row + line_offset
 
 	if self.debug then
-		vim.notify("[styled-components] Requesting completions from cssls...", vim.log.levels.DEBUG)
+		vim.notify(
+			string.format("[styled-components] Requesting completions at adjusted position %d:%d", adjusted_row, col),
+			vim.log.levels.DEBUG
+		)
 	end
 
-	-- Request completions from cssls
-	return provider.request_completions(bufnr, virtual_content, row, col, function(result)
+	-- Request completions from cssls with adjusted position
+	return provider.request_completions(bufnr, virtual_content, adjusted_row, col, function(result)
 		if self.debug then
 			vim.notify(
 				string.format("[styled-components] Received %d completion items", #result.items),

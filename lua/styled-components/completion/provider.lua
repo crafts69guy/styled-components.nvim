@@ -24,27 +24,55 @@ function M.request_completions(bufnr, virtual_content, row, col, callback)
 		return
 	end
 
-	-- Create virtual text document identifier
-	local uri = vim.uri_from_bufnr(bufnr)
+	-- Create temporary scratch buffer with virtual CSS content
+	local scratch_buf = vim.api.nvim_create_buf(false, true) -- unlisted, scratch
+	vim.bo[scratch_buf].filetype = "css"
 
-	-- Prepare LSP completion params
+	-- Set virtual content in scratch buffer
+	local lines = vim.split(virtual_content, "\n")
+	vim.api.nvim_buf_set_lines(scratch_buf, 0, -1, false, lines)
+
+	-- Create URI for scratch buffer
+	local scratch_uri = vim.uri_from_bufnr(scratch_buf)
+
+	-- Notify cssls about the virtual document
+	client.notify("textDocument/didOpen", {
+		textDocument = {
+			uri = scratch_uri,
+			languageId = "css",
+			version = 1,
+			text = virtual_content,
+		},
+	})
+
+	-- Prepare LSP completion params for the scratch buffer
 	local params = {
 		textDocument = {
-			uri = uri,
+			uri = scratch_uri,
 		},
 		position = {
 			line = row,
 			character = col,
 		},
-		-- context = {
-		-- 	triggerKind = 1, -- Invoked
-		-- },
+		context = {
+			triggerKind = 1, -- Invoked
+		},
 	}
 
 	-- Send completion request
-	-- Note: We're using the virtual content but sending the original URI
-	-- This works because cssls only needs the content at the position
 	local success, request_id = client.request("textDocument/completion", params, function(err, result)
+		-- Cleanup: notify close and delete scratch buffer
+		client.notify("textDocument/didClose", {
+			textDocument = {
+				uri = scratch_uri,
+			},
+		})
+		vim.schedule(function()
+			if vim.api.nvim_buf_is_valid(scratch_buf) then
+				vim.api.nvim_buf_delete(scratch_buf, { force = true })
+			end
+		end)
+
 		if err then
 			vim.notify("[styled-components] cssls completion error: " .. vim.inspect(err), vim.log.levels.WARN)
 			callback({ items = {}, is_incomplete_forward = false, is_incomplete_backward = false })
@@ -82,9 +110,20 @@ function M.request_completions(bufnr, virtual_content, row, col, callback)
 			is_incomplete_forward = is_incomplete,
 			is_incomplete_backward = false,
 		})
-	end, bufnr)
+	end, scratch_buf)
 
 	if not success then
+		-- Cleanup on failure
+		client.notify("textDocument/didClose", {
+			textDocument = {
+				uri = scratch_uri,
+			},
+		})
+		vim.schedule(function()
+			if vim.api.nvim_buf_is_valid(scratch_buf) then
+				vim.api.nvim_buf_delete(scratch_buf, { force = true })
+			end
+		end)
 		callback({ items = {}, is_incomplete_forward = false, is_incomplete_backward = false })
 	end
 
@@ -93,6 +132,17 @@ function M.request_completions(bufnr, virtual_content, row, col, callback)
 		if request_id then
 			client.cancel_request(request_id)
 		end
+		-- Cleanup on cancel
+		client.notify("textDocument/didClose", {
+			textDocument = {
+				uri = scratch_uri,
+			},
+		})
+		vim.schedule(function()
+			if vim.api.nvim_buf_is_valid(scratch_buf) then
+				vim.api.nvim_buf_delete(scratch_buf, { force = true })
+			end
+		end)
 	end
 end
 
@@ -107,9 +157,11 @@ function M.transform_completion_item(lsp_item)
 		documentation = lsp_item.documentation,
 	}
 
-	-- Handle textEdit
-	if lsp_item.textEdit then
-		item.textEdit = lsp_item.textEdit
+	-- IMPORTANT: Remove textEdit because it has positions from virtual CSS buffer
+	-- Let blink.cmp handle insertion at current cursor position
+	-- Use insertText or label instead
+	if lsp_item.textEdit and lsp_item.textEdit.newText then
+		item.insertText = lsp_item.textEdit.newText
 	elseif lsp_item.insertText then
 		item.insertText = lsp_item.insertText
 	else

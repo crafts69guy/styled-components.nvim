@@ -105,8 +105,8 @@ function M.get_injected_language_at_pos(bufnr, row, col)
 	-- Get the language
 	local lang = lang_tree:lang()
 
-	-- Only return if it's CSS (injected language)
-	if lang == "css" then
+	-- Only return if it's CSS or styled (injected language)
+	if lang == "css" or lang == "styled" then
 		return lang
 	end
 

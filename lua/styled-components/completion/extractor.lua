@@ -125,45 +125,53 @@ end
 
 --- Create virtual CSS document with whitespace replacement
 --- This preserves line/column positions for LSP requests
+--- Wraps CSS content in a dummy rule to help cssls understand context
 --- @param bufnr number Buffer number
 --- @param css_region table CSS region from extract_css_region()
 --- @return string Virtual CSS document
+--- @return number line_offset Line offset from wrapper
 function M.create_virtual_css_document(bufnr, css_region)
 	-- Get all buffer lines
 	local all_lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
 
-	-- Replace everything outside CSS region with whitespace
+	-- We'll wrap the CSS content in a dummy rule selector
+	-- Insert ".dummy {" before CSS content and "}" after
 	local virtual_lines = {}
 
 	for i, line in ipairs(all_lines) do
 		local line_idx = i - 1 -- 0-indexed
 
-		if line_idx < css_region.start_line or line_idx > css_region.end_line then
-			-- Outside CSS region: replace with whitespace
+		if line_idx < css_region.start_line then
+			-- Before CSS region: replace with whitespace
 			virtual_lines[i] = string.rep(" ", #line)
-		elseif line_idx == css_region.start_line and line_idx == css_region.end_line then
-			-- Single-line CSS
-			local before = string.rep(" ", css_region.start_col)
-			local css = line:sub(css_region.start_col + 1, css_region.end_col)
-			local after = string.rep(" ", #line - css_region.end_col)
-			virtual_lines[i] = before .. css .. after
 		elseif line_idx == css_region.start_line then
-			-- First line of multi-line CSS
-			local before = string.rep(" ", css_region.start_col)
-			local css = line:sub(css_region.start_col + 1)
-			virtual_lines[i] = before .. css
-		elseif line_idx == css_region.end_line then
-			-- Last line of multi-line CSS
-			local css = line:sub(1, css_region.end_col)
-			local after = string.rep(" ", #line - css_region.end_col)
-			virtual_lines[i] = css .. after
-		else
+			-- First line of CSS: add ".dummy {" before the CSS content
+			local before_css = string.rep(" ", css_region.start_col)
+			local css_content
+			if line_idx == css_region.end_line then
+				-- Single-line CSS
+				css_content = line:sub(css_region.start_col + 1, css_region.end_col)
+			else
+				css_content = line:sub(css_region.start_col + 1)
+			end
+			-- Replace start with ".dummy { " to provide CSS rule context
+			-- But preserve position by using whitespace before
+			virtual_lines[i] = before_css .. ".dummy {\n" .. css_content
+		elseif line_idx > css_region.start_line and line_idx < css_region.end_line then
 			-- Middle lines: keep as is
 			virtual_lines[i] = line
+		elseif line_idx == css_region.end_line and line_idx ~= css_region.start_line then
+			-- Last line of multi-line CSS: add "}" after
+			local css = line:sub(1, css_region.end_col)
+			local after = string.rep(" ", #line - css_region.end_col)
+			virtual_lines[i] = css .. "\n}" .. after
+		else
+			-- After CSS region: replace with whitespace
+			virtual_lines[i] = string.rep(" ", #line)
 		end
 	end
 
-	return table.concat(virtual_lines, "\n")
+	return table.concat(virtual_lines, "\n"), 1 -- Return with line offset of 1 for the wrapper
 end
 
 return M
