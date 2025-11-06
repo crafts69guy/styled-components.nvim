@@ -18,6 +18,12 @@ function source.new(opts)
 
 	local self = setmetatable({}, { __index = source })
 	self.debug = opts.debug or false
+
+	-- Context detection cache for performance optimization
+	-- Cache structure: { "bufnr:row:col" = { in_css: boolean, timestamp: number } }
+	self.context_cache = {}
+	self.cache_ttl_ms = opts.cache_ttl_ms or 100 -- Cache validity: 100ms
+
 	return self
 end
 
@@ -28,43 +34,237 @@ function source:enabled()
 	return vim.tbl_contains({ "typescript", "typescriptreact", "javascript", "javascriptreact" }, filetype)
 end
 
+--- Lightweight check if cursor is in styled-component template pattern
+--- This verifies the TreeSitter structure without full extraction
+--- @param bufnr number Buffer number
+--- @param row number 0-indexed row
+--- @param col number 0-indexed column
+--- @return boolean
+function source:_is_styled_component_pattern(bufnr, row, col)
+	-- Get TreeSitter node at cursor
+	local ok, node = pcall(vim.treesitter.get_node, { bufnr = bufnr, pos = { row, col } })
+	if not ok or not node then
+		if self.debug then
+			util.notify("[styled-components] Pattern check: no node at position", vim.log.levels.DEBUG)
+		end
+		return false
+	end
+
+	if self.debug then
+		util.notify(
+			string.format("[styled-components] Pattern check: node=%s", node:type()),
+			vim.log.levels.DEBUG
+		)
+	end
+
+	-- Walk up to find string_fragment inside template_string
+	local current = node
+	local depth = 0
+	local string_fragment = nil
+
+	while current and depth < 10 do
+		if
+			current:type() == "string_fragment"
+			and current:parent()
+			and current:parent():type() == "template_string"
+		then
+			string_fragment = current
+			break
+		end
+		current = current:parent()
+		depth = depth + 1
+	end
+
+	if not string_fragment then
+		if self.debug then
+			util.notify("[styled-components] Pattern check: not in template_string", vim.log.levels.DEBUG)
+		end
+		return false
+	end
+
+	-- Check if parent is call_expression
+	local template_string = string_fragment:parent()
+	if not template_string then
+		return false
+	end
+
+	local call_expr = template_string:parent()
+	if not call_expr or call_expr:type() ~= "call_expression" then
+		if self.debug then
+			util.notify(
+				string.format(
+					"[styled-components] Pattern check: parent is not call_expression, got %s",
+					call_expr and call_expr:type() or "nil"
+				),
+				vim.log.levels.DEBUG
+			)
+		end
+		return false
+	end
+
+	-- Quick pattern check: styled, css, createGlobalStyle, keyframes
+	local function_node = call_expr:child(0)
+	if not function_node then
+		return false
+	end
+
+	local func_type = function_node:type()
+
+	if self.debug then
+		util.notify(
+			string.format("[styled-components] Pattern check: function type=%s", func_type),
+			vim.log.levels.DEBUG
+		)
+	end
+
+	-- Check member_expression: styled.div
+	if func_type == "member_expression" then
+		local object_node = function_node:child(0)
+		if object_node and object_node:type() == "identifier" then
+			local object_text = vim.treesitter.get_node_text(object_node, bufnr)
+			if self.debug then
+				util.notify(
+					string.format("[styled-components] Pattern check: member_expression object=%s", object_text),
+					vim.log.levels.DEBUG
+				)
+			end
+			if object_text == "styled" then
+				return true
+			end
+		end
+	end
+
+	-- Check identifier: css, createGlobalStyle, keyframes
+	if func_type == "identifier" then
+		local func_text = vim.treesitter.get_node_text(function_node, bufnr)
+		if self.debug then
+			util.notify(
+				string.format("[styled-components] Pattern check: identifier=%s", func_text),
+				vim.log.levels.DEBUG
+			)
+		end
+		if func_text == "css" or func_text == "createGlobalStyle" or func_text == "keyframes" then
+			return true
+		end
+	end
+
+	-- Check call_expression: styled(Component)
+	if func_type == "call_expression" then
+		local inner_func = function_node:child(0)
+		if inner_func and inner_func:type() == "identifier" then
+			local func_text = vim.treesitter.get_node_text(inner_func, bufnr)
+			if self.debug then
+				util.notify(
+					string.format("[styled-components] Pattern check: call_expression func=%s", func_text),
+					vim.log.levels.DEBUG
+				)
+			end
+			if func_text == "styled" then
+				return true
+			end
+		end
+	end
+
+	if self.debug then
+		util.notify(
+			string.format("[styled-components] Pattern check: NO MATCH (func_type=%s)", func_type),
+			vim.log.levels.WARN
+		)
+	end
+
+	return false
+end
+
+--- Check if cursor is in CSS context (with caching for performance)
+--- @param bufnr number Buffer number
+--- @param row number 0-indexed row
+--- @param col number 0-indexed column
+--- @return boolean
+function source:is_in_css_context(bufnr, row, col)
+	-- Generate cache key
+	local cache_key = string.format("%d:%d:%d", bufnr, row, col)
+	local now = vim.uv.now() -- Get current time in milliseconds
+
+	-- Check cache
+	local cached = self.context_cache[cache_key]
+	if cached and (now - cached.timestamp) < self.cache_ttl_ms then
+		if self.debug then
+			util.notify("[styled-components] Cache hit for " .. cache_key, vim.log.levels.DEBUG)
+		end
+		return cached.in_css
+	end
+
+	-- Cache miss or expired - perform detection
+	-- Step 1: Check TreeSitter injection (fast via native API)
+	local injected_lang = injection.get_injected_language_at_pos(bufnr, row, col)
+	local has_css_injection = (injected_lang == "css" or injected_lang == "styled")
+
+	-- Step 2: Verify it's actually a styled-component pattern (not other CSS injection)
+	-- This prevents false positives from custom injection queries
+	local in_css = has_css_injection and self:_is_styled_component_pattern(bufnr, row, col)
+
+	-- Update cache
+	self.context_cache[cache_key] = {
+		in_css = in_css,
+		timestamp = now,
+	}
+
+	-- Clean old cache entries (prevent memory leak)
+	-- Only run cleanup occasionally (every 50 checks)
+	if not self._cache_check_count then
+		self._cache_check_count = 0
+	end
+	self._cache_check_count = self._cache_check_count + 1
+
+	if self._cache_check_count % 50 == 0 then
+		self:cleanup_cache(now)
+	end
+
+	if self.debug then
+		util.notify(
+			string.format(
+				"[styled-components] Cache miss: %s → injection=%s, pattern=%s, result=%s",
+				cache_key,
+				tostring(has_css_injection),
+				tostring(in_css and has_css_injection),
+				tostring(in_css)
+			),
+			vim.log.levels.DEBUG
+		)
+	end
+
+	return in_css
+end
+
+--- Clean up expired cache entries
+--- @param current_time number Current timestamp in milliseconds
+function source:cleanup_cache(current_time)
+	local removed_count = 0
+	for key, entry in pairs(self.context_cache) do
+		if (current_time - entry.timestamp) >= self.cache_ttl_ms then
+			self.context_cache[key] = nil
+			removed_count = removed_count + 1
+		end
+	end
+
+	if self.debug and removed_count > 0 then
+		util.notify(
+			string.format("[styled-components] Cleaned %d expired cache entries", removed_count),
+			vim.log.levels.DEBUG
+		)
+	end
+end
+
 --- Get trigger characters for completion
+--- Returns empty array to let blink.cmp handle keyword-based triggering automatically.
+--- This prevents false triggers (e.g., ':' for TypeScript type annotations).
+--- blink.cmp will still trigger completions based on alphanumeric input.
 --- @return string[]
 function source:get_trigger_characters()
-	return {
-		-- CSS property triggers
-		":",
-		";",
-		" ",
-		"-",
-		-- For triggering after property name
-		"a",
-		"b",
-		"c",
-		"d",
-		"e",
-		"f",
-		"g",
-		"h",
-		"i",
-		"j",
-		"k",
-		"l",
-		"m",
-		"n",
-		"o",
-		"p",
-		"q",
-		"r",
-		"s",
-		"t",
-		"u",
-		"v",
-		"w",
-		"x",
-		"y",
-		"z",
-	}
+	-- No explicit trigger characters - let blink.cmp handle keyword triggering
+	-- Why: ':' and ';' are too aggressive (used in TypeScript syntax)
+	-- blink.cmp automatically triggers on alphanumeric input, which is sufficient
+	return {}
 end
 
 --- Get completions for current context
@@ -80,11 +280,9 @@ function source:get_completions(ctx, callback)
 		util.notify(string.format("[styled-components] Completion requested at %d:%d", row, col), vim.log.levels.DEBUG)
 	end
 
-	-- Check if cursor is in injected CSS region
-	local injected_lang = injection.get_injected_language_at_pos(bufnr, row, col)
-
-	-- Accept both "css" and "styled" as valid CSS regions
-	if injected_lang ~= "css" and injected_lang ~= "styled" then
+	-- Fast path: Check if cursor is in CSS context (with caching)
+	-- This early return prevents expensive operations when not in styled-component templates
+	if not self:is_in_css_context(bufnr, row, col) then
 		callback({ items = {}, is_incomplete_forward = false, is_incomplete_backward = false })
 		return
 	end
