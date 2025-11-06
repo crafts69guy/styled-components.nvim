@@ -55,40 +55,7 @@ This provides `vscode-css-language-server` with:
 
 ## 🚀 Installation
 
-### Lazy.nvim
-
-#### Recommended: Optimized Lazy Loading
-
-```lua
-{
-  "crafts69guy/styled-components.nvim",
-  dependencies = {
-    "nvim-treesitter/nvim-treesitter",
-    "neovim/nvim-lspconfig",  -- Optional for Neovim 0.11+
-  },
-  ft = { "typescript", "typescriptreact", "javascript", "javascriptreact" },
-
-  -- Load injection queries early (lightweight, ~5ms)
-  init = function()
-    require("styled-components").load_queries_early()
-  end,
-
-  -- Full setup on filetype match
-  config = function()
-    require("styled-components").setup({
-      enabled = true,
-      debug = false,
-    })
-  end,
-}
-```
-
-**Why this config?**
-- `init`: Loads TreeSitter queries early (~5ms, ensures syntax highlighting works)
-- `ft`: Defers full setup until you open a TypeScript/JavaScript file
-- Result: Faster Neovim startup, plugin loads only when needed!
-
-#### Simple: Basic Lazy Loading
+### Lazy.nvim (Recommended)
 
 ```lua
 {
@@ -105,6 +72,13 @@ This provides `vscode-css-language-server` with:
   },
 }
 ```
+
+**Why this config?**
+- `ft`: Lazy loads on TypeScript/JavaScript filetypes
+- Plugin automatically loads TreeSitter queries on `VimEnter` (no manual init needed!)
+- Result: Faster startup, zero config, works with all plugin managers!
+
+> **Note:** The plugin automatically handles query loading timing to avoid dependency issues with UI plugins like Snacks in LazyVim. No `init` function needed!
 
 ### Manual Setup (if not using lazy.nvim)
 
@@ -269,7 +243,7 @@ This shows:
 
 ### Common Issues
 
-**No completions showing:**
+**Plugin not loading / No completions:**
 
 1. **Check cssls is installed:**
    ```vim
@@ -304,6 +278,25 @@ Install parsers:
 **cssls not attaching:**
 
 Ensure you have `nvim-lspconfig` installed and loaded before this plugin.
+
+**LazyVim users: Error on startup about `Snacks`:**
+
+This is fixed in the latest version! The plugin now automatically loads queries on `VimEnter` to avoid timing issues.
+
+If you're using an older version and have an `init` function in your config, you can remove it:
+
+```lua
+-- ❌ OLD (not needed anymore)
+init = function()
+  require("styled-components").load_queries_early()
+end,
+
+-- ✅ NEW (automatic)
+-- Just use opts or config, no init needed!
+opts = { debug = false }
+```
+
+The plugin handles timing automatically to work with UI plugins like Snacks, lualine, etc.
 
 ## 🎯 Performance
 
