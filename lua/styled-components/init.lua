@@ -1,4 +1,5 @@
 local M = {}
+local util = require("styled-components.util")
 
 -- Cache to prevent duplicate initialization
 local setup_done = false
@@ -36,7 +37,7 @@ function M.load_queries_early(opts)
 	queries_loaded = injection.setup_injection_queries({ debug = debug })
 
 	if queries_loaded and debug then
-		vim.notify("[styled-components] TreeSitter injection queries loaded (early)", vim.log.levels.INFO)
+		util.notify("[styled-components] TreeSitter injection queries loaded (early)", vim.log.levels.INFO)
 	end
 
 	return queries_loaded
@@ -46,7 +47,7 @@ function M.setup(opts)
 	-- Prevent duplicate setup
 	if setup_done then
 		if M.config.debug then
-			vim.notify("[styled-components] Setup already done, skipping", vim.log.levels.DEBUG)
+			util.notify("[styled-components] Setup already done, skipping", vim.log.levels.DEBUG)
 		end
 		return
 	end
@@ -62,7 +63,7 @@ function M.setup(opts)
 		if not queries_loaded then
 			local success = M.load_queries_early({ debug = M.config.debug })
 			if not success then
-				vim.notify(
+				util.notify(
 					"[styled-components] Failed to load injection queries. CSS completions may not work.",
 					vim.log.levels.WARN
 				)
@@ -79,7 +80,7 @@ function M.setup(opts)
 			})
 
 			if M.config.debug then
-				vim.notify("[styled-components] Full setup completed (cssls configured)", vim.log.levels.INFO)
+				util.notify("[styled-components] Full setup completed (cssls configured)", vim.log.levels.INFO)
 			end
 		end, 100)
 	end
@@ -87,13 +88,13 @@ function M.setup(opts)
 	setup_done = true
 
 	if M.config.debug then
-		vim.notify("[styled-components] Plugin initialized with TreeSitter injection", vim.log.levels.INFO)
+		util.notify("[styled-components] Plugin initialized with TreeSitter injection", vim.log.levels.INFO)
 	end
 end
 
 function M.log(msg)
 	if M.config.debug then
-		vim.notify("[styled-components] " .. msg, vim.log.levels.DEBUG)
+		util.notify("[styled-components] " .. msg, vim.log.levels.DEBUG)
 	end
 end
 

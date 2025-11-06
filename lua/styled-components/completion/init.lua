@@ -1,5 +1,6 @@
 --- Blink.cmp completion source for styled-components
 --- Provides CSS completions inside styled-component template literals
+local util = require("styled-components.util")
 local injection = require("styled-components.injection")
 local extractor = require("styled-components.completion.extractor")
 local provider = require("styled-components.completion.provider")
@@ -76,7 +77,7 @@ function source:get_completions(ctx, callback)
 	local col = ctx.cursor[2] - 1 -- Convert to 0-indexed
 
 	if self.debug then
-		vim.notify(string.format("[styled-components] Completion requested at %d:%d", row, col), vim.log.levels.DEBUG)
+		util.notify(string.format("[styled-components] Completion requested at %d:%d", row, col), vim.log.levels.DEBUG)
 	end
 
 	-- Check if cursor is in injected CSS region
@@ -89,21 +90,21 @@ function source:get_completions(ctx, callback)
 	end
 
 	if self.debug then
-		vim.notify("[styled-components] In CSS region, extracting...", vim.log.levels.DEBUG)
+		util.notify("[styled-components] In CSS region, extracting...", vim.log.levels.DEBUG)
 	end
 
 	-- Extract CSS region
 	local css_region = extractor.extract_css_region(bufnr, row, col)
 	if not css_region then
 		if self.debug then
-			vim.notify("[styled-components] Failed to extract CSS region", vim.log.levels.WARN)
+			util.notify("[styled-components] Failed to extract CSS region", vim.log.levels.WARN)
 		end
 		callback({ items = {}, is_incomplete_forward = false, is_incomplete_backward = false })
 		return
 	end
 
 	if self.debug then
-		vim.notify(
+		util.notify(
 			string.format(
 				"[styled-components] Extracted CSS region: %d:%d to %d:%d",
 				css_region.start_line,
@@ -122,7 +123,7 @@ function source:get_completions(ctx, callback)
 	local adjusted_row = row + line_offset
 
 	if self.debug then
-		vim.notify(
+		util.notify(
 			string.format("[styled-components] Requesting completions at adjusted position %d:%d", adjusted_row, col),
 			vim.log.levels.DEBUG
 		)
@@ -131,7 +132,7 @@ function source:get_completions(ctx, callback)
 	-- Request completions from cssls with adjusted position
 	return provider.request_completions(bufnr, virtual_content, adjusted_row, col, function(result)
 		if self.debug then
-			vim.notify(
+			util.notify(
 				string.format("[styled-components] Received %d completion items", #result.items),
 				vim.log.levels.DEBUG
 			)

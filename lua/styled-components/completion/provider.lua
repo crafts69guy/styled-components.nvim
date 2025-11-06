@@ -1,5 +1,7 @@
 --- LSP Completion Provider for CSS
 --- Handles requesting completions from cssls for virtual CSS documents
+local util = require("styled-components.util")
+
 local M = {}
 
 --- Get cssls client for buffer
@@ -74,7 +76,7 @@ function M.request_completions(bufnr, virtual_content, row, col, callback)
 		end)
 
 		if err then
-			vim.notify("[styled-components] cssls completion error: " .. vim.inspect(err), vim.log.levels.WARN)
+			util.notify("[styled-components] cssls completion error: " .. vim.inspect(err), vim.log.levels.WARN)
 			callback({ items = {}, is_incomplete_forward = false, is_incomplete_backward = false })
 			return
 		end

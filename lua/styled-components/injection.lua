@@ -1,4 +1,5 @@
 local M = {}
+local util = require("styled-components.util")
 
 --- Check if TreeSitter injection is available
 ---@return boolean
@@ -23,7 +24,7 @@ function M.setup_injection_queries(opts)
 	opts = opts or {}
 
 	if not M.is_injection_available() then
-		vim.notify("[styled-components] TreeSitter injection requires Neovim 0.10+", vim.log.levels.WARN)
+		util.notify("[styled-components] TreeSitter injection requires Neovim 0.10+", vim.log.levels.WARN)
 		return false
 	end
 
@@ -33,7 +34,7 @@ function M.setup_injection_queries(opts)
 
 	-- Check if queries exist
 	if vim.fn.isdirectory(queries_dir) == 0 then
-		vim.notify("[styled-components] Injection queries not found at: " .. queries_dir, vim.log.levels.ERROR)
+		util.notify("[styled-components] Injection queries not found at: " .. queries_dir, vim.log.levels.ERROR)
 		return false
 	end
 
@@ -42,7 +43,7 @@ function M.setup_injection_queries(opts)
 	vim.opt.runtimepath:append(plugin_root)
 
 	if opts.debug then
-		vim.notify("[styled-components] Injection queries loaded from: " .. queries_dir, vim.log.levels.INFO)
+		util.notify("[styled-components] Injection queries loaded from: " .. queries_dir, vim.log.levels.INFO)
 	end
 
 	return true
@@ -168,7 +169,7 @@ function M.setup_cssls_for_injection(opts)
 		vim.lsp.enable("cssls")
 
 		if opts.debug then
-			vim.notify(
+			util.notify(
 				"[styled-components] cssls configured (vim.lsp.config) for filetypes: "
 					.. table.concat(extended_filetypes, ", "),
 				vim.log.levels.INFO
@@ -182,7 +183,7 @@ function M.setup_cssls_for_injection(opts)
 	local has_lspconfig, lspconfig = pcall(require, "lspconfig")
 	if not has_lspconfig then
 		if opts.debug then
-			vim.notify(
+			util.notify(
 				"[styled-components] nvim-lspconfig not found. Please configure cssls manually.",
 				vim.log.levels.WARN
 			)
@@ -200,7 +201,7 @@ function M.setup_cssls_for_injection(opts)
 	}, opts.cssls_config or {}))
 
 	if opts.debug then
-		vim.notify(
+		util.notify(
 			"[styled-components] cssls configured (lspconfig) for filetypes: " .. table.concat(extended_filetypes, ", "),
 			vim.log.levels.INFO
 		)
