@@ -58,40 +58,76 @@ This provides `vscode-css-language-server` with:
 ### Lazy.nvim (Recommended)
 
 ```lua
-{
-  "crafts69guy/styled-components.nvim",
-  dependencies = {
-    "nvim-treesitter/nvim-treesitter",
-    "neovim/nvim-lspconfig",  -- Optional for Neovim 0.11+
+-- In your lazy.nvim plugin spec (e.g., ~/.config/nvim/lua/plugins/styled-components.lua)
+return {
+  -- styled-components.nvim: CSS in JS with TreeSitter injection
+  {
+    "crafts69guy/styled-components.nvim",
+    dependencies = {
+      "nvim-treesitter/nvim-treesitter",
+      "neovim/nvim-lspconfig",  -- Optional for Neovim 0.11+
+    },
+    ft = { "typescript", "typescriptreact", "javascript", "javascriptreact" },
+    opts = {
+      enabled = true,
+      debug = false,
+      auto_setup = true,
+    },
   },
-  ft = { "typescript", "typescriptreact", "javascript", "javascriptreact" },
-  opts = {
-    enabled = true,
-    debug = false,
-    auto_setup = true,
-    blink_integration = true,  -- Default: auto-filter cssls completions (blink.cmp)
+
+  -- blink.cmp: Configure with styled-components integration
+  {
+    "saghen/blink.cmp",
+    dependencies = { "crafts69guy/styled-components.nvim" },
+    opts = function(_, opts)
+      local styled = require("styled-components.blink")
+
+      -- Ensure sources table exists
+      opts.sources = opts.sources or {}
+      opts.sources.default = opts.sources.default or { "lsp", "path", "snippets", "buffer" }
+      opts.sources.providers = opts.sources.providers or {}
+
+      -- Add styled-components to default sources
+      table.insert(opts.sources.default, "styled-components")
+
+      -- Configure LSP source to filter cssls completions
+      opts.sources.providers.lsp = vim.tbl_deep_extend("force",
+        opts.sources.providers.lsp or {},
+        {
+          override = {
+            transform_items = styled.get_lsp_transform_items(),
+          },
+        }
+      )
+
+      -- Register styled-components completion source
+      opts.sources.providers["styled-components"] = {
+        name = "styled-components",
+        module = "styled-components.completion",
+        enabled = styled.enabled,
+      }
+
+      return opts
+    end,
   },
 }
 ```
 
 **Why this config?**
-- `ft`: Lazy loads on TypeScript/JavaScript filetypes
-- Plugin automatically loads TreeSitter queries on `VimEnter` (no manual init needed!)
-- Result: Faster startup, zero config, works with all plugin managers!
-
-> **Note:** The plugin automatically handles query loading timing to avoid dependency issues with UI plugins like Snacks in LazyVim. No `init` function needed!
+- `ft`: Lazy loads styled-components on TypeScript/JavaScript filetypes
+- Uses blink.cmp's **official override API** (stable, future-proof)
+- **Filters cssls completions** to ONLY appear in styled-component templates
+- Zero timing issues, no internal patching
+- Result: Reliable, maintainable, works perfectly with LazyVim!
 
 ### Manual Setup (if not using lazy.nvim)
 
 ```lua
+-- Setup styled-components
 require("styled-components").setup({
   enabled = true,
   debug = false,
   auto_setup = true,
-
-  -- Automatically integrate with blink.cmp (filter cssls completions)
-  -- Set to false if you prefer manual control
-  blink_integration = true,  -- Default: true
 
   -- Optional: Completion performance tuning
   completion = {
@@ -106,6 +142,26 @@ require("styled-components").setup({
         lint = {
           unknownAtRules = "ignore",
         },
+      },
+    },
+  },
+})
+
+-- Configure blink.cmp integration
+local styled = require("styled-components.blink")
+require("blink.cmp").setup({
+  sources = {
+    default = { "lsp", "path", "snippets", "buffer", "styled-components" },
+    providers = {
+      lsp = {
+        override = {
+          transform_items = styled.get_lsp_transform_items(),
+        },
+      },
+      ["styled-components"] = {
+        name = "styled-components",
+        module = "styled-components.completion",
+        enabled = styled.enabled,
       },
     },
   },
@@ -201,94 +257,87 @@ In any styled-component template, you get:
                           -- Lower = more responsive, but more TreeSitter queries
   },
 }
+
+-- Note: blink.cmp integration is now configured separately
+-- See the "blink.cmp Integration" section above
 ```
 
 ### blink.cmp Integration
 
-This plugin provides a custom completion source for [blink.cmp](https://github.com/Saghen/blink.cmp).
+This plugin provides a custom completion source for [blink.cmp](https://github.com/Saghen/blink.cmp) using the **official Provider Override API**.
 
-#### Option 1: Automatic Integration (Recommended - Zero Config!)
+#### Configuration
 
-The plugin automatically filters cssls completions to ONLY appear in styled-component templates:
+Add both plugins to your lazy.nvim config:
 
 ```lua
--- styled-components.nvim setup
-{
-  "crafts69guy/styled-components.nvim",
-  opts = {
-    blink_integration = true,  -- ✅ Default: Auto-filter cssls completions
+return {
+  {
+    "crafts69guy/styled-components.nvim",
+    ft = { "typescript", "typescriptreact", "javascript", "javascriptreact" },
+    opts = {},
   },
-}
+  {
+    "saghen/blink.cmp",
+    dependencies = { "crafts69guy/styled-components.nvim" },
+    opts = function(_, opts)
+      local styled = require("styled-components.blink")
 
--- blink.cmp setup - just add the source!
-{
-  "saghen/blink.cmp",
-  opts = {
-    sources = {
-      default = { "lsp", "path", "snippets", "buffer", "styled-components" },
-      providers = {
-        ["styled-components"] = {
-          name = "styled-components",
-          module = "styled-components.completion",
-        },
-      },
-    },
+      opts.sources = opts.sources or {}
+      opts.sources.default = opts.sources.default or { "lsp", "path", "snippets", "buffer" }
+      opts.sources.providers = opts.sources.providers or {}
+
+      -- Add styled-components source
+      table.insert(opts.sources.default, "styled-components")
+
+      -- Filter cssls completions using override API
+      opts.sources.providers.lsp = vim.tbl_deep_extend("force",
+        opts.sources.providers.lsp or {},
+        {
+          override = {
+            transform_items = styled.get_lsp_transform_items(),
+          },
+        }
+      )
+
+      -- Register styled-components provider
+      opts.sources.providers["styled-components"] = {
+        name = "styled-components",
+        module = "styled-components.completion",
+        enabled = styled.enabled,
+      }
+
+      return opts
+    end,
   },
 }
 ```
 
-**What automatic integration does:**
-- 🎯 Patches blink.cmp's LSP source to filter cssls completions
-- ✅ CSS completions ONLY appear in styled-component templates
-- ❌ CSS completions hidden in React components, hooks, normal TypeScript code
-- 🔄 Preserves your existing `transform_items` if you have one
+#### How It Works
 
-#### Option 2: Manual Integration (Advanced - More Control)
+**The Problem:**
+- styled-components.nvim configures cssls to attach to TypeScript/JavaScript files (required for TreeSitter injection)
+- blink.cmp's LSP source shows ALL completions from ALL attached LSP clients
+- Without filtering, users see CSS completions everywhere (React components, hooks, normal TypeScript code)
 
-If you prefer explicit control, disable auto-integration and use the helper function:
+**The Solution:**
+- Uses blink.cmp's **official override API** to filter cssls completions
+- `transform_items` checks if cursor is inside TreeSitter-injected CSS region
+- CSS completions ONLY appear in styled-component templates
+- Outside templates, cssls completions are filtered out
 
-```lua
--- styled-components.nvim setup
-{
-  "crafts69guy/styled-components.nvim",
-  opts = {
-    blink_integration = false,  -- Disable automatic patching
-  },
-}
-
--- blink.cmp setup with manual filtering
-{
-  "saghen/blink.cmp",
-  opts = {
-    sources = {
-      default = { "lsp", "path", "snippets", "buffer", "styled-components" },
-      providers = {
-        lsp = {
-          name = "LSP",
-          module = "blink.cmp.sources.lsp",
-          -- 🔥 Manual control: One-liner from plugin
-          transform_items = require("styled-components.blink").get_lsp_transform_items(),
-        },
-        ["styled-components"] = {
-          name = "styled-components",
-          module = "styled-components.completion",
-        },
-      },
-    },
-  },
-}
-```
-
-**Why you might prefer manual:**
-- You want explicit control over when filtering happens
-- You have custom `transform_items` logic for LSP source
-- You're debugging integration issues
+**Benefits:**
+- ✅ Uses official, stable blink.cmp API (future-proof)
+- ✅ No internal patching or hacks
+- ✅ Zero timing issues
+- ✅ Transparent and easy to debug
+- ✅ Works perfectly with LazyVim
 
 **Performance Notes:**
-- The source only triggers CSS completions inside styled-component templates
-- Context detection is cached (100ms TTL by default) to minimize overhead
-- Trigger characters are CSS-specific (`:`, `;`, `-`) to avoid unnecessary triggers
-- blink.cmp handles keyword-based triggering automatically
+- Context detection is cached (100ms TTL) to minimize overhead
+- Smart pattern verification prevents false positives
+- Only triggers inside styled-component templates
+- Typical overhead: ~0.1-5ms per completion request
 
 ### Custom cssls Configuration
 

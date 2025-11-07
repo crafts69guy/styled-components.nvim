@@ -151,53 +151,66 @@ Custom blink.cmp source for CSS completions in styled-component templates:
 - Scratch buffer allows cssls to process CSS without file I/O
 - Position mapping simplified by using insertText only
 
-#### 6. `lua/styled-components/blink.lua` **Blink.cmp Integration** ⭐
+#### 6. `lua/styled-components/blink.lua` **Blink.cmp Integration Helpers** ⭐
 
-Utilities for integrating with blink.cmp to filter cssls completions outside styled-component context:
+Helper functions for integrating with blink.cmp using the **official Provider Override API**:
 
 **Why this module exists:**
 - styled-components.nvim configures cssls to attach to TypeScript/JavaScript files (necessary for injection)
 - blink.cmp's LSP source forwards ALL completions from ALL LSP clients without context filtering
 - Without filtering, users see CSS completions everywhere in TS/JS files (React components, hooks, etc.)
-- This module provides filtering to show CSS completions ONLY in styled-component templates
+- This module provides helper functions to filter CSS completions ONLY in styled-component templates
 
 **Functions:**
 
-`get_lsp_transform_items()` - Returns a transform_items function for blink.cmp's LSP source:
+`enabled()` - Smart filetype detection for source activation:
+- Returns `true` for TypeScript/JavaScript filetypes
+- Used by blink.cmp to determine when to activate styled-components source
+- Simple, efficient, no overhead
+
+`get_lsp_transform_items()` - Returns a transform_items function for blink.cmp's LSP source override:
 - Checks if cursor is in styled-component CSS injection region
 - Filters out cssls completions when NOT in CSS context
 - Allows all completions (including cssls) when IN CSS context
-- Compatible with blink.cmp's LSP source API
+- Compatible with blink.cmp's Provider Override API
+- Robust item detection (checks multiple fields for different blink.cmp versions)
 
-**Usage patterns:**
+**Usage pattern (user's config):**
 
-1. **Automatic Integration** (via `init.lua:setup_blink_integration()`):
-   - Plugin automatically patches blink.cmp's LSP source on setup
-   - Preserves existing user `transform_items` if present
-   - Enabled by default via `config.blink_integration = true`
-   - Zero user configuration required
+Users configure blink.cmp using these helpers:
+```lua
+local styled = require("styled-components.blink")
+require("blink.cmp").setup({
+  sources = {
+    default = { "lsp", "path", "snippets", "buffer", "styled-components" },
+    providers = {
+      lsp = {
+        override = {
+          transform_items = styled.get_lsp_transform_items(),
+        },
+      },
+      ["styled-components"] = {
+        name = "styled-components",
+        module = "styled-components.completion",
+        enabled = styled.enabled,
+      },
+    },
+  },
+})
+```
 
-2. **Manual Integration** (via `get_lsp_transform_items()`):
-   - User explicitly adds to blink.cmp config:
-   ```lua
-   providers = {
-     lsp = {
-       transform_items = require("styled-components.blink").get_lsp_transform_items(),
-     },
-   }
-   ```
-   - Useful when user wants explicit control or has custom transform logic
-
-**Integration timing:**
-- Auto-integration defers patching by 100ms to ensure blink.cmp is fully initialized
-- Gracefully handles blink.cmp not being installed (silent skip)
-- Logs debug messages when `config.debug = true`
+**Benefits of this approach:**
+- Uses official blink.cmp API (stable, future-proof)
+- No internal patching or timing issues
+- Transparent and easy to debug
+- User has full control
+- Zero magic, explicit configuration
 
 ### Data Flow
 
 **Initialization:**
 ```
-Plugin loads (lazy=false, priority=1000)
+Plugin loads (ft = ["typescript", "typescriptreact", ...])
     ↓
 injection.setup_injection_queries()
   → Adds queries/*.scm to Neovim's runtimepath
@@ -205,11 +218,13 @@ injection.setup_injection_queries()
 injection.setup_cssls_for_injection()
   → Configures cssls filetypes: ['css', 'scss', 'typescript', 'typescriptreact', ...]
     ↓
-setup_blink_integration() (if blink_integration = true, default)
-  → Patches blink.cmp's LSP source to filter cssls completions
-  → Preserves existing transform_items if present
+User's blink.cmp config uses helpers from styled-components.blink
+  → LSP source override: transform_items = styled.get_lsp_transform_items()
+  → styled-components source: enabled = styled.enabled
     ↓
 blink.cmp registers styled-components completion source
+  → Uses official Provider Override API
+  → No patching, no timing issues
 ```
 
 **Runtime (Completion Flow):**

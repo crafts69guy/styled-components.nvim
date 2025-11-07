@@ -25,12 +25,6 @@ M.config = {
 		-- Caching significantly improves performance by avoiding repeated TreeSitter queries
 		cache_ttl_ms = 100,
 	},
-
-	-- Automatically integrate with blink.cmp to filter cssls completions
-	-- When enabled, plugin will patch blink.cmp's LSP source to hide CSS completions
-	-- outside styled-component templates (prevents cssls from triggering everywhere)
-	-- Set to false if you prefer manual control via require("styled-components.blink").get_lsp_transform_items()
-	blink_integration = true,
 }
 
 --- Load ONLY injection queries (lightweight, for early init)
@@ -54,115 +48,6 @@ function M.load_queries_early(opts)
 	end
 
 	return queries_loaded
-end
-
---- Automatically setup blink.cmp integration if available
---- This patches blink.cmp's LSP source to filter cssls completions outside styled-component context
----
---- Why this is needed:
---- - styled-components.nvim configures cssls to attach to TypeScript/JavaScript files
---- - blink.cmp's LSP source forwards ALL completions from ALL LSP clients without context filtering
---- - This causes CSS completions to appear everywhere in TS/JS files, not just in styled-components
---- - Auto-integration patches the LSP source's transform_items to filter cssls appropriately
----
---- @return boolean success Whether integration was setup successfully
-function M.setup_blink_integration()
-	-- Check if blink.cmp is available
-	local ok, blink_cmp = pcall(require, "blink.cmp")
-	if not ok then
-		if M.config.debug then
-			util.notify("[styled-components] blink.cmp not found, skipping auto-integration", vim.log.levels.DEBUG)
-		end
-		return false
-	end
-
-	-- Defer patching until blink.cmp sources are initialized
-	-- This ensures blink.cmp's internal structures are ready
-	vim.defer_fn(function()
-		local ok_config, blink_config = pcall(require, "blink.cmp.config")
-		if not ok_config then
-			if M.config.debug then
-				util.notify(
-					"[styled-components] Failed to load blink.cmp.config, skipping auto-integration",
-					vim.log.levels.WARN
-				)
-			end
-			return
-		end
-
-		-- Get LSP source provider config
-		local providers = blink_config.sources.providers or {}
-		local lsp_provider = providers.lsp
-
-		if not lsp_provider then
-			if M.config.debug then
-				util.notify(
-					"[styled-components] blink.cmp LSP provider not found, skipping auto-integration",
-					vim.log.levels.WARN
-				)
-			end
-			return
-		end
-
-		-- Wrap existing transform_items or create new one
-		local original_transform = lsp_provider.transform_items
-		local blink_util = require("styled-components.blink")
-		local our_transform = blink_util.get_lsp_transform_items()
-
-		lsp_provider.transform_items = function(ctx, items)
-			-- Apply original transform first if exists (preserve user's existing transformations)
-			if original_transform then
-				items = original_transform(ctx, items)
-			end
-			-- Then apply our cssls filtering
-			return our_transform(ctx, items)
-		end
-
-		-- Also override get_trigger_characters to prevent cssls triggers outside CSS context
-		-- This prevents ':' and ';' from triggering CSS completions in TypeScript code
-		local original_get_trigger_chars = lsp_provider.get_trigger_characters
-		lsp_provider.get_trigger_characters = function(self)
-			-- Get original trigger characters from all LSP clients
-			local triggers = {}
-			if original_get_trigger_chars then
-				triggers = original_get_trigger_chars(self) or {}
-			end
-
-			-- If in TypeScript/JavaScript file, check if cursor is in CSS context
-			-- If not, filter out CSS-specific trigger characters
-			local bufnr = vim.api.nvim_get_current_buf()
-			local ft = vim.bo[bufnr].filetype
-			if vim.tbl_contains({ "typescript", "typescriptreact", "javascript", "javascriptreact" }, ft) then
-				-- Get cursor position
-				local cursor = vim.api.nvim_win_get_cursor(0)
-				local row = cursor[1] - 1
-				local col = cursor[2]
-
-				-- Check if in CSS injection
-				local injection = require("styled-components.injection")
-				local injected_lang = injection.get_injected_language_at_pos(bufnr, row, col)
-
-				-- If NOT in CSS context, filter out CSS trigger characters
-				if injected_lang ~= "css" and injected_lang ~= "styled" then
-					-- Remove CSS-specific triggers: ':', ';', '-', etc.
-					triggers = vim.tbl_filter(function(char)
-						return not vim.tbl_contains({ ":", ";", "-", "{", "}" }, char)
-					end, triggers)
-				end
-			end
-
-			return triggers
-		end
-
-		if M.config.debug then
-			util.notify(
-				"[styled-components] blink.cmp LSP source patched successfully (cssls filtering + trigger override enabled)",
-				vim.log.levels.INFO
-			)
-		end
-	end, 100) -- Delay 100ms to ensure blink.cmp is fully initialized
-
-	return true
 end
 
 function M.setup(opts)
@@ -205,11 +90,6 @@ function M.setup(opts)
 				util.notify("[styled-components] Full setup completed (cssls configured)", vim.log.levels.INFO)
 			end
 		end, 100)
-	end
-
-	-- Setup blink.cmp integration (auto-filter cssls completions)
-	if M.config.blink_integration then
-		M.setup_blink_integration()
 	end
 
 	setup_done = true
